@@ -1,4 +1,4 @@
-package goMicroServiceStat
+package statmonitor
 
 import (
 	"log"
@@ -14,7 +14,7 @@ type SrvStatConfig struct {
 
 var DefaultStatMonitorConfig *SrvStatConfig = &SrvStatConfig{
 	RefreshInterval:  3 * time.Second,
-	thresholdPercent: 5,
+	thresholdPercent: 3,
 }
 
 type SrvStat struct {
@@ -36,6 +36,8 @@ type SrvStatMonitor struct {
 
 	timer *time.Timer
 	stop  chan struct{}
+	// reportCurrentStatusNow is used to bypass the timer and force a report now
+	forceReportCurrentStatus chan bool
 }
 
 func NewSrvStatMonitor(config *SrvStatConfig, changeReceiver chan *SrvStat) *SrvStatMonitor {
@@ -44,6 +46,10 @@ func NewSrvStatMonitor(config *SrvStatConfig, changeReceiver chan *SrvStat) *Srv
 	mon.changeReceiver = changeReceiver
 	mon.Restart()
 	return mon
+}
+
+func (mon *SrvStatMonitor) ForceReportNow() {
+	mon.forceReportCurrentStatus <- true
 }
 
 // Restart will restart monitoring. (usually used if paused before)
@@ -103,23 +109,35 @@ func (mon *SrvStatMonitor) getCurrentStat() *SrvStatInternal {
 	return result
 }
 
+func (mon *SrvStatMonitor) queryAndHandleNewStatus(lastStat *SrvStatInternal) *SrvStatInternal {
+	newStat := mon.getCurrentStat()
+
+	if !newStat.Equal(lastStat) {
+		lastStat = newStat
+		mon.changeReceiver <- &newStat.SrvStat
+	}
+	mon.timer.Reset(mon.config.RefreshInterval)
+
+	return lastStat
+}
+
 func (mon *SrvStatMonitor) monitor() {
 	mon.timer = time.NewTimer(mon.config.RefreshInterval)
 	mon.stop = make(chan struct{})
+	mon.forceReportCurrentStatus = make(chan bool)
+
+	// start background monitoring
 	go func() {
-		var lastStat *SrvStatInternal = nil
+		// immediately read and report current status
+		var lastStat *SrvStatInternal = mon.queryAndHandleNewStatus(nil)
 		for {
 			select {
 			case <-mon.stop:
 				return
+			case <-mon.forceReportCurrentStatus:
+				lastStat = mon.queryAndHandleNewStatus(nil)
 			case <-mon.timer.C:
-				log.Println("query new status")
-				newStat := mon.getCurrentStat()
-				if !newStat.Equal(lastStat) {
-					lastStat = newStat
-					mon.changeReceiver <- &newStat.SrvStat
-				}
-				mon.timer.Reset(mon.config.RefreshInterval)
+				lastStat = mon.queryAndHandleNewStatus(lastStat)
 			}
 		}
 	}()
@@ -129,6 +147,7 @@ func (mon *SrvStatMonitor) monitor() {
 func (mon *SrvStatMonitor) Stop() {
 	if mon.stop != nil {
 		close(mon.stop)
+		close(mon.forceReportCurrentStatus)
 		mon.stop = nil
 	}
 }
