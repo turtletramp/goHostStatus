@@ -18,6 +18,7 @@ type MQTTReporterConfig struct {
 	OnlineStatusTopic    string
 	OfflineReportPayload []byte
 	OnlineReportPayload  []byte
+	OnlineStatusRetained bool
 
 	OnConnectionStatusChanged func(isConnected bool)
 }
@@ -89,7 +90,7 @@ func (m *MQTTReporter) connect(config *MQTTReporterConfig) error {
 	// is online status report wanted?
 	if config.OnlineStatusTopic != "" && len(config.OfflineReportPayload) > 0 {
 		// YES --> set last will
-		opts.SetBinaryWill(m.createTopicPath(config.OnlineStatusTopic), config.OfflineReportPayload, 1, false)
+		opts.SetBinaryWill(m.createTopicPath(config.OnlineStatusTopic), config.OfflineReportPayload, 2, config.OnlineStatusRetained)
 	}
 
 	client := mqtt.NewClient(opts)

@@ -16,6 +16,7 @@ func main() {
 	conf.OnlineStatusTopic = "online"
 	conf.OnlineReportPayload = []byte("true")
 	conf.OfflineReportPayload = []byte("false")
+	conf.OnlineStatusRetained = true
 
 	statMon, err := statmonitor.NewSrvReport(conf)
 	if err != nil {

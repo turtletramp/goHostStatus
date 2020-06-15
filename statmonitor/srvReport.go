@@ -2,8 +2,6 @@ package statmonitor
 
 import (
 	"encoding/json"
-
-	"github.com/labstack/gommon/log"
 )
 
 type SrvReport struct {
@@ -41,15 +39,20 @@ func NewSrvReport(mqttConfig *MQTTReporterConfig) (*SrvReport, error) {
 	sr.srvStatReceiver = make(chan *SrvStat)
 	sr.srvMonitor = NewSrvStatMonitor(DefaultStatMonitorConfig, sr.srvStatReceiver)
 
+	sr.publishSrvInfo()
 	sr.startPublishSrvStat()
 
 	return sr, nil
 }
 
+func (sr *SrvReport) publishSrvInfo() {
+	data, _ := json.Marshal(GetSrvInfo())
+	sr.mqtt.Publish("info", 1, true, data)
+}
+
 func (sr *SrvReport) publishStat(stat *SrvStat) {
 	data, _ := json.Marshal(stat)
 	sr.mqtt.Publish("status", 1, false, data)
-	log.Info("published")
 }
 
 func (sr *SrvReport) startPublishSrvStat() {
